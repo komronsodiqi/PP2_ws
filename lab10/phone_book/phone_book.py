@@ -1,175 +1,146 @@
 import psycopg2
 from config import host, user, password, db_name
-connection = None
 
 
-data_from_console = None
-cursor = None
-try:
-    connection = psycopg2.connect(
+def connect_db():
+    """Establish and return a PostgreSQL connection."""
+    conn = psycopg2.connect(
         host=host,
         user=user,
         password=password,
         database=db_name
     )
-    connection.autocommit = True
+    conn.autocommit = True
+    return conn
 
 
-    # # CREATE A TABLE
-    # with connection.cursor() as cursor:
-    #     cursor.execute(
-    #         """
-    #         CREATE TABLE phone_book (
-    #         user_id SERIAL PRIMARY KEY,
-    #         user_name VARCHAR(150) NOT NULL,
-    #         phone_num VARCHAR(15) NOT NULL
-    #         )
-    #         """
-    #     )
-    #     print("[INFO] Table created successfully!")
+def create_table(conn):
+    """Create the phone_book table if it doesn't exist."""
+    sql = (
+        """
+        CREATE TABLE IF NOT EXISTS phone_book (
+            user_id SERIAL PRIMARY KEY,
+            user_name VARCHAR(150) NOT NULL,
+            phone_num VARCHAR(15) NOT NULL
+        )
+        """
+    )
+    with conn.cursor() as cur:
+        cur.execute(sql)
+    print("[OK] Table `phone_book` is ready.")
 
 
-
-    # INSERTING DATA TO TABLE FROM CSV FILE
-    # with connection.cursor() as cursor:
-    #     cursor.execute(
-    #         """
-    #         COPY phone_book (user_name, phone_num)
-    #         FROM 'C:/Users/qasob/OneDrive/Documents/GitHub/PP2_lab_GhQ/lab_10/phone_book/csv/csv_for_lab10_phone_book.csv'
-    #         DELIMITER ','
-    #         CSV HEADER;
-    #         """
-    #     )
-    #
-    #     print("[INFO] Inserted successfully!")
+def insert_from_csv(conn, path):
+    """Bulk-load data from a CSV file into the table."""
+    sql = (
+        """
+        COPY phone_book(user_name, phone_num)
+        FROM %s DELIMITER ',' CSV HEADER
+        """
+    )
+    with conn.cursor() as cur:
+        cur.execute(sql, (path,))
+    print(f"[OK] Imported data from {path}.")
 
 
+def insert_user(conn):
+    """Prompt for a single user and insert into the table."""
+    name = input("Enter user name: ")
+    phone = input("Enter phone number: ")
+    sql = "INSERT INTO phone_book(user_name, phone_num) VALUES (%s, %s)"
+    with conn.cursor() as cur:
+        cur.execute(sql, (name, phone))
+    print(f"[OK] Added {name} -> {phone}.")
 
 
+def update_user(conn):
+    """Update an existing user's name and/or phone by ID."""
+    uid = input("Enter user ID to update: ")
+    new_name = input("Enter new name (leave blank to skip): ")
+    new_phone = input("Enter new phone (leave blank to skip): ")
 
-    # cursor = connection.cursor()
+    fields, params = [], []
+    if new_name:
+        fields.append("user_name = %s")
+        params.append(new_name)
+    if new_phone:
+        fields.append("phone_num = %s")
+        params.append(new_phone)
+    if not fields:
+        print("[WARN] Nothing to update.")
+        return
 
-
-
-
-
-    # INSERTING DATA FROM CONSOLE
-    # N = int(input("Enter number of Users: "))
-    # print("Enter USER NAME and his PHONE NUMBER separated by SPACE:")
-    # for i in range(N):
-    #     data = input()
-    #     cursor.execute(
-    #         """
-    #         INSERT INTO public.phone_book(user_name, phone_num)
-    #         VALUES (%s, %s);
-    #         """, (data.split())
-    #     )
-
-
-
-    # UPDATING PHONE NUMBER BY NAME
-    # user_name = input("Enter user first name: ")
-    # phone_num_update = input("Enter new phone number: ")
-    # cursor.execute("""
-    #     UPDATE phone_book
-    #     SET phone_num = (%s)
-    #     WHERE
-    #     user_name = (%s)
-    #     """, (phone_num_update, user_name))
+    sql = f"UPDATE phone_book SET {', '.join(fields)} WHERE user_id = %s"
+    params.append(uid)
+    with conn.cursor() as cur:
+        cur.execute(sql, params)
+    print(f"[OK] User {uid} updated.")
 
 
-
-    # UPDATING NAME BY PHONE NUMBER
-    # phone_num_update = input("Enter phone number: ")
-    # user_name = input("Enter user's new name: ")
-    # cursor.execute("""
-    #         UPDATE phone_book
-    #         SET user_name = (%s)
-    #         WHERE
-    #         phone_num = (%s)
-    #         """, (user_name, phone_num_update))
+def delete_user(conn):
+    """Delete a user by name."""
+    name = input("Enter user name to delete: ")
+    sql = "DELETE FROM phone_book WHERE user_name = %s"
+    with conn.cursor() as cur:
+        cur.execute(sql, (name,))
+    print(f"[OK] Deleted entries with name '{name}'.")
 
 
-    # UPDATE NAME
-    # crrnt_name = input("Enter current name: ")
-    # updated_name = input("Enter new name: ")
-    # cursor.execute("""
-    #         UPDATE phone_book
-    #         SET user_name = (%s)
-    #         WHERE
-    #         user_name = (%s)
-    #         """, (updated_name, crrnt_name))
+def query_users(conn):
+    """Run a SELECT query based on user-specified condition."""
+    cond = input("Enter SQL WHERE clause (e.g. phone_num LIKE '%54%'): ")
+    sql = f"SELECT user_id, user_name, phone_num FROM phone_book WHERE {cond}"
+    with conn.cursor() as cur:
+        cur.execute(sql)
+        rows = cur.fetchall()
+    if rows:
+        print("Results:")
+        for r in rows:
+            print(r)
+    else:
+        print("[INFO] No matching records.")
 
 
-    # UPDATING PHONE NUMBER
-    # crrnt_phone_num = input("Enter current phone number: ")
-    # updated_phone_num = input("Enter new phone number: ")
-    # cursor.execute("""
-    #         UPDATE phone_book
-    #         SET phone_num = (%s)
-    #         WHERE
-    #         phone_num = (%s)
-    #         """, (updated_phone_num, crrnt_phone_num))
+def main():
+    conn = None
+    try:
+        conn = connect_db()
+        create_table(conn)
+
+        options = {
+            '1': (insert_from_csv, 'Import from CSV file'),
+            '2': (insert_user, 'Add single user'),
+            '3': (update_user, 'Update user by ID'),
+            '4': (delete_user, 'Delete user by name'),
+            '5': (query_users, 'Query phone book'),
+            '0': (None, 'Exit')
+        }
+
+        while True:
+            print("\n--- PHONE BOOK MENU ---")
+            for k, (_, desc) in options.items():
+                print(f"{k}. {desc}")
+            choice = input("Select an option: ")
+            if choice == '0':
+                break
+            action = options.get(choice)
+            if action:
+                func = action[0]
+                if choice == '1':
+                    path = input("Enter path to CSV file: ")
+                    func(conn, path)
+                else:
+                    func(conn)
+            else:
+                print("[ERROR] Invalid option.")
+
+    except Exception as ex:
+        print("[ERROR]", ex)
+    finally:
+        if conn:
+            conn.close()
+            print("[INFO] Connection closed.")
 
 
-    # MAIN: UPDATING ROW DATA
-    # user_id = int(input('Enter user id: '))
-    # updated_user_name = input('Enter new user name: ')
-    # updated_phone_num = input('Enter new phone number: ')
-    # cursor.execute("""
-    #         UPDATE phone_book
-    #         SET user_name = (%s), phone_num = (%s)
-    #         WHERE
-    #         user_id = (%s)
-    #         """, (updated_user_name ,updated_phone_num, user_id))
-
-
-
-
-    # QUERYING THROUGH THE PHONE BOOK
-    # fetches users with phone numbers containing 54
-    # cursor.execute(
-    #     """
-    #     SELECT user_id, user_name from phone_book WHERE phone_num like '%54%'
-    #     """
-    # )
-    #
-    # print("Number of users:", cursor.rowcount)
-    # row = cursor.fetchone()
-    # while row is not None:
-    #     print(row)
-    #     row = cursor.fetchone()
-
-
-
-    # fetches users with id less than N
-    # cursor.execute(
-    #     """
-    #     SELECT user_name, phone_num from phone_book WHERE user_id <= 3
-    #     """
-    # )
-    # rows = cursor.fetchall()
-    #
-    # for row in rows:
-    #     print(row)
-
-
-
-
-    # DELETING DATA BY NAME
-    # user_name = input('Enter user name: ')
-    # cursor.execute(
-    #     """
-    #     DELETE FROM phone_book
-    #     WHERE user_name = %s
-    #     """, (user_name, ))
-
-
-
-except Exception as _ex:
-    print("[INFO] Error while working with PostgreSQL", _ex)
-finally:
-    if connection:
-
-        connection.close()
-        print("[INFO] PostgreSQL closed successfully!")
+if __name__ == '__main__':
+    main()
