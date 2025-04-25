@@ -157,24 +157,22 @@ $$ LANGUAGE plpgsql;
 
 -- 5. Procedure to delete by username or phone
 CREATE OR REPLACE PROCEDURE delete_contact(
-    p_value TEXT,
-    p_type TEXT DEFAULT 'name', -- 'name' or 'phone'
-    OUT rows_deleted INT
+    p_value        TEXT,
+    OUT rows_deleted INT,
+    p_type         TEXT DEFAULT 'name'   -- now at the end
 )
 AS $$
 BEGIN
     rows_deleted := 0;
-    
+
     IF p_type = 'name' THEN
         DELETE FROM phone_book
         WHERE user_name = p_value;
-        
         GET DIAGNOSTICS rows_deleted = ROW_COUNT;
         RAISE NOTICE 'Deleted % record(s) with name: %', rows_deleted, p_value;
     ELSIF p_type = 'phone' THEN
         DELETE FROM phone_book
         WHERE phone_num = p_value;
-        
         GET DIAGNOSTICS rows_deleted = ROW_COUNT;
         RAISE NOTICE 'Deleted % record(s) with phone: %', rows_deleted, p_value;
     ELSE
