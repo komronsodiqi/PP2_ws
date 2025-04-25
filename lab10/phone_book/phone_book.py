@@ -41,10 +41,18 @@ def insert_from_csv(conn):
     """Bulk-load data from a CSV file into the table."""
     path = input("Enter path to CSV file: ")
     try:
-        sql = "COPY phone_book(user_name, phone_num) FROM %s DELIMITER ',' CSV HEADER"
-        with conn.cursor() as cur:
-            cur.execute(sql, (path,))
+        with open(path, 'r') as f:
+            # Skip header
+            next(f)
+            
+            with conn.cursor() as cur:
+                cur.copy_expert(
+                    "COPY phone_book(user_name, phone_num) FROM STDIN WITH CSV",
+                    f
+                )
         print(f"[OK] Imported data from {path}.")
+    except FileNotFoundError:
+        print(f"[ERROR] File {path} not found. Please check the file path.")
     except Exception as e:
         print(f"[ERROR] CSV import failed: {e}")
 
